@@ -3,7 +3,7 @@ module Agents
     include FormConfigurable
     can_dry_run!
     no_bulk_receive!
-    default_schedule '5m'
+    default_schedule 'every_5m'
 
     description do
       <<-MD
@@ -89,7 +89,6 @@ module Agents
         http.request(request)
       end
 
-      log "request status : #{response.code}"
 
       if interpolated['debug'] == 'true'
         log "response.body"
@@ -102,21 +101,12 @@ module Agents
 
       if interpolated['changes_only'] == 'true'
         if payload.to_s != memory['last_status']
-          if "#{memory['last_status']}" == ''
-            create_event payload: payload
-          else
-            last_status = memory['last_status'].gsub("=>", ": ").gsub(": nil", ": null")
-            last_status = JSON.parse(last_status)
-
-            if payload['status']['indicator'] != memory['last_status']['status']['indicator']
-              create_event payload: payload
-            end
-          end
           memory['last_status'] = payload.to_s
+          create_event payload: payload
         else
-            if interpolated['debug'] == 'true'
-              log "no diff"
-            end
+          if interpolated['debug'] == 'true'
+            log "no diff"
+          end
         end
       else
         create_event payload: payload
