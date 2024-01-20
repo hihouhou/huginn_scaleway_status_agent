@@ -9,7 +9,7 @@ module Agents
       <<-MD
       The huginn Scaleway status agent checks the Scaleway service status.
 
-      `debug` is used to verbose mode.
+      The `debug` can add verbosity.
 
       `changes_only` is only used to emit event about a currency's change.
 
@@ -37,9 +37,9 @@ module Agents
       }
     end
 
+    form_configurable :debug, type: :boolean
     form_configurable :expected_receive_period_in_days, type: :string
     form_configurable :changes_only, type: :boolean
-    form_configurable :debug, type: :boolean
 
     def validate_options
 
@@ -66,52 +66,41 @@ module Agents
 
     private
 
+    def log_curl_output(code,body)
+
+      log "request status : #{code}"
+
+      if interpolated['debug'] == 'true'
+        log "body"
+        log body
+      end
+
+    end
+
     def check_status()
 
       uri = URI.parse("https://status.scaleway.com/api/v2/status.json")
-      request = Net::HTTP::Get.new(uri)
-      request["Authority"] = "status.scaleway.com"
-      request["Accept"] = "*/*"
-      request["User-Agent"] = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36"
-      request["X-Requested-With"] = "XMLHttpRequest"
-      request["Sec-Gpc"] = "1"
-      request["Sec-Fetch-Site"] = "same-origin"
-      request["Sec-Fetch-Mode"] = "cors"
-      request["Sec-Fetch-Dest"] = "empty"
-      request["Referer"] = "https://status.scaleway.com/"
-      request["Accept-Language"] = "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7"
-      
-      req_options = {
-        use_ssl: uri.scheme == "https",
-      }
-      
-      response = Net::HTTP.start(uri.hostname, uri.port, req_options) do |http|
-        http.request(request)
-      end
+      response = Net::HTTP.get_response(uri)
 
+      log_curl_output(response.code,response.body)
 
-      if interpolated['debug'] == 'true'
-        log "response.body"
-        log response.body
-      end
-
-      log "fetch status request status : #{response.code}"
-      parsed_json = JSON.parse(response.body)
-      payload = { :status => { :indicator => "#{parsed_json['status']['indicator']}", :description => "#{parsed_json['status']['description']}" } }
+      payload = JSON.parse(response.body)
+      event = payload.dup
+      event = { :status => { :name =>  "#{payload['page']['name']}", :indicator => "#{payload['status']['indicator']}", :description => "#{payload['status']['description']}" } }
 
       if interpolated['changes_only'] == 'true'
-        if payload.to_s != memory['last_status']
-          memory['last_status'] = payload.to_s
-          create_event payload: payload
-        else
-          if interpolated['debug'] == 'true'
-            log "no diff"
+        if payload != memory['last_status']
+          if memory['last_status'].nil?
+            create_event payload: event
+          elsif !memory['last_status']['status'].nil? and memory['last_status']['status'].present? and payload['status'] != memory['last_status']['status']
+            create_event payload: event
           end
+          memory['last_status'] = payload
         end
       else
-        create_event payload: payload
-        if payload.to_s != memory['last_status']
-          memory['last_status'] = payload.to_s
+        create_event payload: event
+        if payload != memory['last_status']
+          memory['last_status'] = payload
         end
       end
     end
